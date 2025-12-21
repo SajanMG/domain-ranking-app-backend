@@ -1,98 +1,144 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Domain Ranking App — Backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Lightweight NestJS backend that stores and serves historical Tranco/Tranco-like ranking data for domains.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Overview
 
-## Description
+This service exposes a small API to fetch domain ranking time-series. It uses Sequelize + Postgres for storage and caches Tranco API responses for a configurable TTL.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+Key behaviors:
+- GET `/ranking/:domains` — accepts comma-separated domains and returns labels + ranks for each domain.
+- Cached results: data is refreshed from the configured Tranco API when the local cache is stale.
 
-## Project setup
+## Tech stack
 
-```bash
-$ npm install
-```
+- Node.js + TypeScript
+- NestJS framework
+- Sequelize (sequelize-typescript) + (Neon) PostgreSQL
 
-## Compile and run the project
+## Repo structure (important files)
 
-```bash
-# development
-$ npm run start
+- `src/` — application source
+- `src/ranking` — ranking controller + service
+- `src/db/models/domain-rank.model.ts` — Sequelize model for stored ranks
+- `src/health.controller.ts` — DB health endpoint
+- `src/main.ts` — application bootstrap
+- `package.json` — scripts & dependencies
 
-# watch mode
-$ npm run start:dev
+## Prerequisites
 
-# production mode
-$ npm run start:prod
-```
+- Node.js (18+ recommended)
+- PostgreSQL database accessible to the app
 
-## Run tests
+## Environment variables
 
-```bash
-# unit tests
-$ npm run test
+Set these in your environment or in a `.env` file at the project root.
 
-# e2e tests
-$ npm run test:e2e
+- `DB_HOST` — Postgres host
+- `DB_PORT` — Postgres port (default: 5432)
+- `DB_USER` — DB username
+- `DB_PASSWORD` — DB password
+- `DB_NAME` — DB name
+- `PORT` — HTTP port the app listens on (default: 3000)
+- `FRONTEND_URL` — allowed CORS origin for frontend (default: http://localhost:5173)
+- `TRANCO_API_BASE_URL` — base URL for the Tranco-like API used to fetch ranking data (required for refresh)
+- `CACHE_TTL_HOURS` — number of hours to keep cached entries before refreshing (default: 24)
 
-# test coverage
-$ npm run test:cov
-```
+### Neon (Postgres) notes
 
-## Deployment
+- If you host Postgres on Neon, get the connection details from the Neon Console and set the DB variables accordingly.
+- Neon requires TLS. The application already sets `dialectOptions.ssl` when `DB_HOST` contains `neon` (or `aws`/`ssl`). That enables `ssl: { require: true, rejectUnauthorized: false }` for Sequelize.
+- Neon connection strings look like `postgres://<user>:<password>@<host>:<port>/<database>`. This project reads DB values from `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, and `DB_NAME` — you can parse the Neon connection string into these variables or set them directly in your environment.
+- Use the Neon Console to create a dedicated DB role and a database for this app. Store credentials securely (do not commit `.env` to git).
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+## Quickstart
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+1. Install dependencies
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+npm install
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+2. Provide environment variables (example `.env`):
 
-## Resources
+```env
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=postgres
+DB_PASSWORD=secret
+DB_NAME=domain_ranking
+PORT=3000
+TRANCO_API_BASE_URL=https://tranco.example/api/domain
+CACHE_TTL_HOURS=24
+FRONTEND_URL=http://localhost:5173
+```
 
-Check out a few resources that may come in handy when working with NestJS:
+3. Run in development
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+```bash
+npm run start:dev
+```
 
-## Support
+The server will log the listening URL (e.g., http://localhost:3000).
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+## API
 
-## Stay in touch
+- `GET /` — root hello endpoint
+- `GET /health/db` — verifies DB connection
+- `GET /ranking/:domains` — main endpoint; provide comma-separated domains
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+Example request:
+
+```bash
+curl "http://localhost:3000/ranking/example.com,example.org"
+```
+
+Response shape (example):
+
+```json
+{
+  "example.com": {
+    "domain": "example.com",
+    "labels": ["2024-01-01","2024-01-02"],
+    "ranks": [12345, 12350],
+    "outOfTop1M": false
+  }
+}
+```
+
+If no rows are found for a domain, `outOfTop1M` will be `true`.
+
+## Database and model notes
+
+- The project uses `sequelize-typescript` and auto-loads the `DomainRank` model (`src/db/models/domain-rank.model.ts`).
+- `synchronize: true` is enabled in `SequelizeModule` for convenience during development — this will create tables automatically. For production, consider using explicit migrations and disabling auto-sync.
+
+## Scripts
+
+- `npm run start` — start production (uses `nest start`)
+- `npm run start:dev` — start in watch mode
+- `npm run build` — build the project
+- `npm run lint` — run and auto-fix ESLint
+- `npm run format` — format with Prettier
+- `npm run test` — run unit tests
+- `npm run test:e2e` — run e2e tests
+
+See `package.json` for full details.
+
+## Testing
+
+- Unit tests are configured with Jest. Run `npm run test`.
+- E2E tests can be run with `npm run test:e2e` (ensure a test database is available and environment variables are set).
+
+## Development notes
+
+- Ranking refreshes use the `TRANCO_API_BASE_URL` environment variable; the service expects the external API to return an array of `{ date, rank }` objects under `ranks` for a domain.
+- Cache freshness is controlled via `CACHE_TTL_HOURS`.
+
+## Contributing
+
+Contributions welcome. Open issues or PRs with a clear description and tests where applicable.
 
 ## License
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+This repository currently has an unlicensed package.json entry. Add a license file or update `package.json` as needed.
