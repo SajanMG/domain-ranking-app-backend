@@ -141,4 +141,4 @@ Contributions welcome. Open issues or PRs with a clear description and tests whe
 
 ## License
 
-This repository currently has an unlicensed package.json entry. Add a license file or update `package.json` as needed.
+MIT — change as appropriate for your project.
