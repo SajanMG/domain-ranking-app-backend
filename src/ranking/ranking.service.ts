@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DomainRank } from 'src/db/models/domain-rank.model';
+import { DomainRank } from '../db/models/domain-rank.model';
 import { InjectModel } from '@nestjs/sequelize';
 import { ConfigService } from '@nestjs/config';
 
@@ -32,7 +32,12 @@ export class RankingService {
     for (const domain of domains) {
       const isFresh = await this.isCacheFresh(domain);
       if (!isFresh) {
+        console.log(
+          `[CACHE MISS] Cache stale. Fetching API data for ${domain}`,
+        );
         await this.refreshFromTronco(domain);
+      } else {
+        console.log(`[CACHE HIT] Returning cached data for ${domain}`);
       }
       const rows = await this.domainRankModel.findAll({
         where: { domain },
