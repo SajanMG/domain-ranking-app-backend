@@ -27,22 +27,55 @@ export class RankingService {
       .split(',')
       .map((d) => d.trim().toLowerCase())
       .filter(Boolean);
-    const result: Record<string, DomainSeries> = {};
 
-    for (const domain of domains) {
-      const isFresh = await this.isCacheFresh(domain);
-      if (!isFresh) {
-        console.log(
-          `[CACHE MISS] Cache stale. Fetching API data for ${domain}`,
-        );
-        await this.refreshFromTronco(domain);
-      } else {
-        console.log(`[CACHE HIT] Returning cached data for ${domain}`);
+    const ttlHours = Number(this.config.get<string>('CACHE_TTL_HOURS') ?? '24');
+    const ttlMs = ttlHours * 60 * 60 * 1000;
+
+    const allRows = await this.domainRankModel.findAll({
+      where: { domain: domains },
+      attributes: ['domain', 'date', 'rank', 'updatedAt'],
+      order: [
+        ['domain', 'ASC'],
+        ['date', 'ASC'],
+      ],
+    });
+    const latestByDomain = new Map<string, (typeof allRows)[0]>();
+
+    for (const row of allRows) {
+      if (!latestByDomain.has(row.domain)) {
+        latestByDomain.set(row.domain, row);
       }
-      const rows = await this.domainRankModel.findAll({
-        where: { domain },
-        order: [['date', 'ASC']],
-      });
+    }
+
+    const domainsToRefresh: string[] = [];
+    for (const domain of domains) {
+      const latest = latestByDomain.get(domain);
+      const isFresh =
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        latest && Date.now() - new Date(latest.updatedAt).getTime() < ttlMs;
+
+      if (isFresh) {
+        console.log(`[CACHE HIT] ${domain}`);
+      } else {
+        console.log(`[CACHE MISS] ${domain} - refreshing from API`);
+        domainsToRefresh.push(domain);
+      }
+    }
+
+    await Promise.all(domainsToRefresh.map((d) => this.refreshFromTronco(d)));
+
+    const rowsByDomain = new Map<string, typeof allRows>();
+
+    for (const row of allRows) {
+      if (!rowsByDomain.has(row.domain)) {
+        rowsByDomain.set(row.domain, []);
+      }
+      rowsByDomain.get(row.domain)!.push(row);
+    }
+
+    const result: Record<string, DomainSeries> = {};
+    for (const domain of domains) {
+      const rows = rowsByDomain.get(domain) ?? [];
 
       result[domain] = {
         domain,
@@ -51,22 +84,8 @@ export class RankingService {
         outOfTop1M: rows.length === 0,
       };
     }
+
     return result;
-  }
-  private async isCacheFresh(domain: string): Promise<boolean> {
-    const ttlHours = Number(this.config.get<string>('CACHE_TTL_HOURS') ?? '24');
-    const ttlMs = ttlHours * 60 * 60 * 1000;
-    // find the newest entry for the domain
-    const latest = await this.domainRankModel.findOne({
-      where: { domain },
-      order: [['date', 'DESC']],
-    });
-
-    if (!latest || !latest.updatedAt) return false;
-
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    const ageMs = Date.now() - new Date(latest.updatedAt).getTime();
-    return ageMs < ttlMs;
   }
 
   private async refreshFromTronco(domain: string): Promise<void> {
@@ -96,9 +115,12 @@ export class RankingService {
         Number.isFinite(x.rank),
       );
 
-    await this.domainRankModel.destroy({ where: { domain } });
+    // await this.domainRankModel.destroy({ where: { domain } });
     if (rows.length > 0) {
-      await this.domainRankModel.bulkCreate(rows);
+      await this.domainRankModel.bulkCreate(rows, {
+        updateOnDuplicate: ['rank', 'date', 'updatedAt'],
+      });
+      console.log(`[CACHE REFRESHED] ${domain}`);
     }
   }
 }
